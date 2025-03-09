@@ -281,3 +281,107 @@
     (asserts! (log-event "CLAIM" user yield-to-claim) err-event-error)
     (ok yield-to-claim)))
 )
+
+;; Read-only Functions
+
+;; Get user position details
+(define-read-only (get-user-position (user principal))
+    (map-get? user-deposits user)
+)
+
+;; Get comprehensive pool statistics
+(define-read-only (get-pool-stats)
+    {
+        total-liquidity: (var-get total-liquidity),
+        pool-active: (var-get pool-active),
+        emergency-paused: (var-get emergency-paused),
+        current-yield-rate: (var-get yield-rate),
+        min-deposit: (var-get min-deposit),
+        max-deposit-per-user: (var-get max-deposit-per-user),
+        max-pool-size: (var-get max-pool-size),
+        total-yield-paid: (var-get total-yield-paid)
+    }
+)
+
+;; Get event details by ID
+(define-read-only (get-event (event-id uint))
+    (map-get? events event-id)
+)
+
+;; Administrative Functions
+
+;; Toggle pool active status
+(define-public (set-pool-active (active bool))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (var-set pool-active active)
+        (asserts! (log-event "POOL_STATUS" contract-owner (if active u1 u0)) err-event-error)
+        (ok true))
+)
+
+;; Emergency pause for security incidents
+(define-public (emergency-pause)
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (var-set emergency-paused true)
+        (var-set last-emergency-action stacks-block-height)
+        (asserts! (log-event "EMERGENCY_PAUSE" contract-owner u0) err-event-error)
+        (ok true))
+)
+
+;; Resume after emergency pause
+(define-public (emergency-resume)
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (>= (- stacks-block-height (var-get last-emergency-action)) emergency-cooldown-period) err-cooldown-active)
+        (var-set emergency-paused false)
+        (asserts! (log-event "EMERGENCY_RESUME" contract-owner u0) err-event-error)
+        (ok true))
+)
+
+;; Update yield rate
+(define-public (set-yield-rate (new-rate uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (<= new-rate basis-points-denominator) err-invalid-amount)  ;; Max 100% APY
+        (var-set yield-rate new-rate)
+        (map-set yield-snapshots stacks-block-height
+            {
+                rate: new-rate,
+                total-liquidity: (var-get total-liquidity),
+                timestamp: stacks-block-height
+            })
+        (asserts! (log-event "YIELD_RATE" contract-owner new-rate) err-event-error)
+        (ok true))
+)
+
+;; Update pool parameters
+(define-public (set-pool-parameters (new-min uint) (new-max-per-user uint) (new-max-pool uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (< new-min new-max-per-user) err-invalid-amount)
+        (asserts! (< new-max-per-user new-max-pool) err-invalid-amount)
+        (var-set min-deposit new-min)
+        (var-set max-deposit-per-user new-max-per-user)
+        (var-set max-pool-size new-max-pool)
+        (asserts! (log-event "PARAMS_UPDATE" contract-owner u0) err-event-error)
+        (ok true))
+)
+
+;; Add authorized operator
+(define-public (add-operator (operator principal))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (map-set authorized-operators operator true)
+        (asserts! (log-event "ADD_OPERATOR" operator u0) err-event-error)
+        (ok true))
+)
+
+;; Remove authorized operator
+(define-public (remove-operator (operator principal))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (map-set authorized-operators operator false)
+        (asserts! (log-event "REMOVE_OPERATOR" operator u0) err-event-error)
+        (ok true))
+)

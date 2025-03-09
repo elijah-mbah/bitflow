@@ -177,3 +177,48 @@
         (ok true)
         (ok false))
 )
+
+;; Public Functions
+
+;; Deposit BTC into the liquidity pool
+(define-public (deposit (amount uint))
+    (let (
+        (user tx-sender)
+        (current-liquidity (var-get total-liquidity))
+        (new-liquidity (+ current-liquidity amount))
+    )
+    (try! (check-pool-status))
+    (try! (validate-deposit-amount amount))
+
+    (match (map-get? user-deposits user)
+        existing-deposit 
+        (let (
+            (new-user-amount (+ amount (get amount existing-deposit)))
+        )
+            (asserts! (<= new-user-amount (var-get max-deposit-per-user)) err-above-max-deposit)
+            (try! (update-user-yield user))
+            (map-set user-deposits
+                user
+                {
+                    amount: new-user-amount,
+                    last-deposit-height: stacks-block-height,
+                    accumulated-yield: (get accumulated-yield existing-deposit),
+                    last-action-height: stacks-block-height,
+                    total-deposits: (+ (get total-deposits existing-deposit) amount),
+                    total-withdrawals: (get total-withdrawals existing-deposit)
+                }))
+        (map-set user-deposits
+            user
+            {
+                amount: amount,
+                last-deposit-height: stacks-block-height,
+                accumulated-yield: u0,
+                last-action-height: stacks-block-height,
+                total-deposits: amount,
+                total-withdrawals: u0
+            }))
+
+    (var-set total-liquidity new-liquidity)
+    (asserts! (log-event "DEPOSIT" user amount) err-event-error)
+    (ok true))
+)

@@ -63,3 +63,64 @@
 (define-data-var last-yield-calculation uint stacks-block-height)
 (define-data-var total-yield-paid uint u0)
 (define-data-var last-emergency-action uint u0)
+
+;; Data Maps
+
+;; User deposit tracking with comprehensive metrics
+(define-map user-deposits
+    principal
+    {
+        amount: uint,
+        last-deposit-height: uint,
+        accumulated-yield: uint,
+        last-action-height: uint,
+        total-deposits: uint,
+        total-withdrawals: uint
+    }
+)
+
+;; Historical yield rate snapshots for auditing
+(define-map yield-snapshots
+    uint  ;; block height
+    {
+        rate: uint,
+        total-liquidity: uint,
+        timestamp: uint
+    }
+)
+
+;; Operator authorization mapping
+(define-map authorized-operators
+    principal
+    bool
+)
+
+;; Event System
+
+(define-data-var event-counter uint u0)
+
+(define-map events
+    uint
+    {
+        event-type: (string-ascii 20),
+        user: principal,
+        amount: uint,
+        stacks-block-height: uint
+    }
+)
+
+;; Private Functions
+
+;; Event logging system for transparency and tracking
+(define-private (log-event (event-type (string-ascii 20)) (user principal) (amount uint))
+    (begin
+        (map-set events (var-get event-counter)
+            {
+                event-type: event-type,
+                user: user,
+                amount: amount,
+                stacks-block-height: stacks-block-height
+            })
+        (var-set event-counter (+ (var-get event-counter) u1))
+        true)
+)

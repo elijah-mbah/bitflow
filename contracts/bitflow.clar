@@ -124,3 +124,56 @@
         (var-set event-counter (+ (var-get event-counter) u1))
         true)
 )
+
+;; Calculates yield based on amount and block duration
+(define-private (calculate-yield (amount uint) (blocks uint))
+    (let (
+        (rate (var-get yield-rate))
+        (yield-amount (/ (* amount (* rate blocks)) (* blocks-per-year basis-points-denominator)))
+    )
+    yield-amount)
+)
+
+;; Updates user yield based on current block height
+(define-private (update-user-yield (user principal))
+    (let (
+        (user-data (unwrap! (map-get? user-deposits user) (err u0)))
+        (current-height stacks-block-height)
+        (blocks-since-last (- current-height (get last-deposit-height user-data)))
+        (new-yield (calculate-yield (get amount user-data) blocks-since-last))
+    )
+    (map-set user-deposits
+        user
+        {
+            amount: (get amount user-data),
+            last-deposit-height: current-height,
+            accumulated-yield: (+ (get accumulated-yield user-data) new-yield),
+            last-action-height: current-height,
+            total-deposits: (get total-deposits user-data),
+            total-withdrawals: (get total-withdrawals user-data)
+        })
+    (ok true))
+)
+
+;; Validates pool operational status
+(define-private (check-pool-status)
+    (begin
+        (asserts! (var-get pool-active) err-pool-inactive)
+        (asserts! (not (var-get emergency-paused)) err-paused)
+        (ok true))
+)
+
+;; Validates deposit amount against pool constraints
+(define-private (validate-deposit-amount (amount uint))
+    (begin
+        (asserts! (>= amount (var-get min-deposit)) err-below-min-deposit)
+        (asserts! (<= (+ (var-get total-liquidity) amount) (var-get max-pool-size)) err-pool-full)
+        (ok true))
+)
+
+;; Boolean validation helper
+(define-private (validate-bool (value bool))
+    (if value
+        (ok true)
+        (ok false))
+)
